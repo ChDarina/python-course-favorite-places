@@ -6,7 +6,6 @@ from typing import Optional
 from urllib.parse import urlencode, urljoin
 
 import httpx
-
 from clients.base.base import BaseClient
 from clients.shemas import LocalityDTO
 
@@ -32,7 +31,7 @@ class LocationClient(BaseClient):
             return None
 
     async def get_location(
-        self, latitude: float, longitude: float
+        self, latitude: Optional[float], longitude: Optional[float]
     ) -> Optional[LocalityDTO]:
         """
         Получение данных о местонахождении по переданным координатам.
@@ -44,10 +43,11 @@ class LocationClient(BaseClient):
 
         endpoint = "reverse-geocode-client"
         query_params = {
-            "latitude": latitude,
-            "longitude": longitude,
             "localityLanguage": "en",
         }
+        if latitude and longitude:
+            query_params["longitude"] = longitude
+            query_params["latitude"] = latitude
         url = urljoin(
             self.base_url,
             f"{endpoint}?{urlencode(query_params)}",
@@ -61,6 +61,8 @@ class LocationClient(BaseClient):
                 locality=response.get("locality")
                 if response.get("locality", "").strip()
                 else None,
+                latitude=round(response.get("latitude"), 2),
+                longitude=round(response.get("longitude"), 2),
             )
 
         return None

@@ -33,15 +33,13 @@ class PlacesService:
         self.session = session
         self.places_repository = PlacesRepository(session)
 
-    async def get_places_list(self, limit: int) -> list[Place]:
+    async def get_places_list(self) -> list[Place]:
         """
         Получение списка любимых мест.
-
-        :param limit: Ограничение на количество элементов в выборке.
         :return:
         """
 
-        return await self.places_repository.find_all_by(limit=limit)
+        return await self.places_repository.find_all_by()
 
     async def get_place(self, primary_key: int) -> Optional[Place]:
         """
@@ -53,30 +51,17 @@ class PlacesService:
 
         return await self.places_repository.find(primary_key)
 
-    async def create_place(self, place: Place) -> Optional[int]:
+    @staticmethod
+    def publish_event(place: Place):
         """
-        Создание нового объекта любимого места по переданным данным.
+        Публикация ивента о попытке импорта информации из Country Informer Service.
 
-        :param place: Данные создаваемого объекта.
-        :return: Идентификатор созданного объекта.
+        :param Place place: Место.
+        :return:
         """
-
-        # обогащение данных путем получения дополнительной информации от API
-        if location := await LocationClient().get_location(
-            latitude=place.latitude, longitude=place.longitude
-        ):
-            place.country = location.alpha2code
-            place.city = location.city
-            place.locality = location.locality
-
-        primary_key = await self.places_repository.create_model(place)
-        await self.session.commit()
-
-        # публикация события о создании нового объекта любимого места
-        # для попытки импорта информации по нему в сервисе Countries Informer
         try:
             place_data = CountryCityDTO(
-                city=place.city,
+                city=place.city if place.city else "",
                 alpha2code=place.country,
             )
             EventProducer().publish(
@@ -88,29 +73,65 @@ class PlacesService:
                 exc_info=True,
             )
 
-        return primary_key
+    @staticmethod
+    async def detailed_place(data: PlaceUpdate) -> Optional[Place]:
+        """
+        Получение деталей о месте.
+        :param PlaceUpdate data: данные о месте
+        :return:
+        """
+        if location := await LocationClient().get_location(latitude=data.latitude,
+                                                         longitude=data.longitude):
+            place = Place(
+                latitude=location.latitude,
+                longitude=location.longitude,
+                description=data.description,
+                country=location.alpha2code,
+                city=location.city,
+                locality=location.locality
+            )
+            return place
+        return None
 
-    async def update_place(self, primary_key: int, place: PlaceUpdate) -> Optional[int]:
+    async def create_place(self, data: PlaceUpdate) -> Optional[int]:
+        """
+        Создание нового объекта любимого места по переданным данным.
+
+        :param data: Данные создаваемого объекта.
+        :return: Идентификатор созданного объекта.
+        """
+        # Получение места с деталями
+        place = await self.detailed_place(data)
+        if place:
+            primary_key = await self.places_repository.create_model(place)
+            await self.session.commit()
+
+            # публикация события о создании нового объекта любимого места
+            # для попытки импорта информации по нему в сервисе Countries Informer
+            self.publish_event(place)
+
+            return primary_key
+        return None
+
+    async def update_place(self, primary_key: int, data: PlaceUpdate) -> Optional[int]:
         """
         Обновление объекта любимого места по переданным данным.
 
         :param primary_key: Идентификатор объекта.
-        :param place: Данные для обновления объекта.
+        :param data: Данные для обновления объекта.
         :return:
         """
-
-        # при изменении координат – обогащение данных путем получения дополнительной информации от API
-        # todo
-
+        if data.longitude or data.latitude:
+            # Обновляем данные о месте при изменении координат
+            place = await self.detailed_place(data)
+        else:
+            place = await self.get_place(primary_key)
+            place.description = data.description
         matched_rows = await self.places_repository.update_model(
             primary_key, **place.dict(exclude_unset=True)
         )
         await self.session.commit()
-
-        # публикация события для попытки импорта информации
-        # по обновленному объекту любимого места в сервисе Countries Informer
-        # todo
-
+        self.publish_event(place)
         return matched_rows
 
     async def delete_place(self, primary_key: int) -> Optional[int]:
