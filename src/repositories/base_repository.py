@@ -77,7 +77,6 @@ class BaseRepository(ABC):
     async def find_all_by(
         self,
         *,
-        limit: int,
         order_by: Optional[Any] = None,
         offset: Optional[int] = 0,
         **kwargs: Any,
@@ -87,13 +86,12 @@ class BaseRepository(ABC):
 
         :param offset: Смещение элементов
         :param order_by: Сортировка (по умолчанию - ID)
-        :param limit: Лимит на количество элементов в выборке
         :param kwargs: Условия для выборки
         :return:
         """
 
         order_by = order_by or self.get_attr("id")
-        query = self._select(**kwargs).order_by(order_by).limit(limit).offset(offset)
+        query = self._select(**kwargs).order_by(order_by).offset(offset)
         cursor = await self.session.execute(query)
 
         return cursor.scalars().all()

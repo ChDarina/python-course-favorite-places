@@ -16,6 +16,8 @@ class LocalityDTO(BaseModel):
             city="Mariehamn",
             alpha2code="AX",
             locality="Mariehamn sub-region",
+            latitude=12.34,
+            longitude=56.78
         )
     """
 
@@ -28,3 +30,5 @@ class LocalityDTO(BaseModel):
     locality: Optional[str] = Field(
         None, title="Местонахождение", min_length=2, max_length=255
     )
+    latitude: float = Field(title="Широта")
+    longitude: float = Field(title="Долгота")
